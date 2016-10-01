@@ -51,7 +51,7 @@ var Avgrund = (function(){
 		document.removeEventListener( 'touchstart', onDocumentClick, false );
 
 		removeClass( container, 'avgrund-active' );
-		removeClass( popup, 'avgrund-popup-animate')
+		removeClass( popup, 'avgrund-popup-animate');
 	}
 
 	function disableBlur() {
@@ -82,6 +82,6 @@ var Avgrund = (function(){
 		disableBlur: disableBlur,
 		show: show,
 		hide: hide
-	}
+	};
 
 })();

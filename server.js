@@ -1,20 +1,17 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const mosca = require('mosca');
-const mqtt = require('mqtt');
-const mongoose = require('mongoose');
+var express = require('express');
+var bodyParser = require('body-parser');
+var mqtt = require('mqtt');
+var mongoose = require('mongoose');
+var mosca = require('mosca');
+var bcrypt = require('bcrypt');
 
 // Models
-var Channel = require('./models/channel');
+var Room = require('./models/room');
 var Message = require('./models/message');
 
 var app = express();
 var server = require('http').createServer(app);
-server.listen(3000);
-
-// Mongoose Configurations
-mongoose.Promise = global.Promise;
-mongoose.connect('mongodb://localhost:27017/chat');
+server.listen(8080);
 
 // Express Configurations
 app.use('/styles', express.static(__dirname + '/public/styles'));
@@ -23,23 +20,21 @@ app.use('/images', express.static(__dirname + '/public/images'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ 'extended' : true }));
 
-app.get('/', function(request, response) {
+app.get('/', function (request, response) {
   response.sendFile(__dirname + '/public/index.html');
 });
 
-app.post('/private', function(request, response) {
-  let channel = request.body.channel;
+app.post('/create', function (request, response) {
+  let room = request.body.room;
   let password = request.body.password;
 
   Room.update({
-    '_id' : channel
+    '_id' : room
+  }, { '$set' : {
+    'password' : bcrypt.hashSync(password, 10),
+    'private' : true }
   }, {
-    '$set' : {
-      'password' : password,
-      'private' : true
-    }
-  }, {
-    'upsert' : true
+      'upsert' : true
   }).then(function(document) {
     response.sendStatus(200);
   }).catch(function(error) {
@@ -47,29 +42,33 @@ app.post('/private', function(request, response) {
   });
 });
 
-app.post('/check', function(request, response) {
-  let channel = request.body.channel;
+app.post('/check', function (request, response) {
+  let room = request.body.room;
   let password = request.body.password;
 
   Room.findOne({
-    '_id' : channel
+    '_id' : room
   }).then(function(document) {
-    if (password == document.password) response.sendStatus(200);
+    if (bcrypt.compareSync(password, document.password)) response.sendStatus(200);
     else response.sendStatus(401);
   }).catch(function(error) {
     response.sendStatus(401);
   });
 });
 
+// Mongoose Configurations
+mongoose.connect('mongodb://localhost:27017/chat');
+mongoose.Promise = global.Promise;
+
 // Mosca Settings
-let options = {
+var options = {
   'type' : 'mongo',
-  'url' : 'mongodb://localhost:27017/mqtt',
+  'url' : 'mongodb://localhost:27017/mosca',
   'pubsubCollection' : 'messages',
   'mongo' : {}
 };
 
-let settings = {
+var settings = {
   'port' : 1883,
   'stats' : false,
   'logger' : {},
@@ -82,24 +81,24 @@ let settings = {
 };
 
 // Chatting Server (PubSub)
-let ChatServer = new mosca.Server(settings);
-let ChatClient = mqtt.connect('ws://localhost:1884', { 'keepalive' : 0 });
+var ChatServer = new mosca.Server(settings);
+var ChatClient = mqtt.connect('ws://localhost:1884', { 'keepalive' : 0 });
 
 process.on('SIGINT', function() {
   ChatClient.end();
-
-  Channel.remove({}, function(error) {});
+  Room.remove({}, function(error) {});
 });
 
-const ReservedWords = ['createchannel', 'removechannel', 'totalchannels', 'totalclients', 'online', 'offline'];
+const ReservedTopics = ['createroom', 'removeroom', 'totalrooms', 'totalusers', 'online', 'offline'];
+
 ChatServer.on('published', function(packet, client) {
-  if (ReservedWords.indexOf(packet.topic) === -1 && !packet.topic.includes('$SYS'))
+  if (ReservedTopics.indexOf(packet.topic) === -1 && !packet.topic.includes('$SYS'))
   {
     let json = JSON.parse(packet.payload.toString('utf-8'));
     let message = new Message({
       'from' : json.nickname,
       'content' : json.message,
-      'channel' : packet.topic,
+      'room' : packet.topic,
       'date' : new Date()
     });
 
@@ -108,86 +107,92 @@ ChatServer.on('published', function(packet, client) {
 });
 
 ChatServer.on('subscribed', function(topic, client) {
-  if (ReservedWords.indexOf(topic) === -1)
+  if (ReservedTopics.indexOf(topic) === -1)
   {
     let json = JSON.stringify({
-      'channel' : topic,
+      'room' : topic,
       'nickname' : client.id
     });
-
     getClient().publish('online', json);
-    create(topic, client); // add Channel and Client
+
+    construct(topic, client); // add Channel and Client
   }
 });
 
 ChatServer.on('unsubscribed', function(topic, client) {
-  if (ReservedWords.indexOf(topic) === -1)
+  if (ReservedTopics.indexOf(topic) === -1)
   {
     let json = JSON.stringify({
-      'channel' : topic,
+      'room' : topic,
       'nickname' : client.id
     });
-
     getClient().publish('offline', json);
-    destroy(topic, client); // remove Channel and Client
+
+    destruct(topic, client); // remove Channel and Client
   }
 });
 
 // Helper functions
-function create(topic, client)
+function construct(topic, client)
 {
-  Channel.update({
+  Room.update({
     '_id' : topic
   }, {
     '$push' : {
-      'clientIds' : client.id
-    }
-  }, {
-    'upsert' : true
-  }).then(function(topic) {
-    broadcastAllChannels();
-    broadcastAllClients(topic);
-  });
-}
-
-function destroy(topic, client)
-{
-  Channel.update({
-    '_id' : topic
-  }, {
-    '$pull' : {
-      'clientIds' : client.id
+      'clientIDs' : client.id
     }
   }, {
     'upsert' : true
   }).then(function(document) {
-    if (document.clientIds.length > 0)
-    {
-      broadcastAllChannels();
-      broadcastAllClients(topic);
-    }
-    else
-    {
-      Channel.remove({
-        '_id' : topic
-      }, function(error) {
-        if (!error) getClient().publish('removechannel', JSON.stringify({ 'channel' : topic }));
-      });
-    }
+    notifyAllRooms();
+    notifyAllUsers(topic);
   });
 }
 
-function broadcastAllChannels()
+function destruct(topic, client)
 {
-  Channel.find({}, '_id clientIds private').then(function(documents) {
-    getClient().publish('totalchannels', JSON.stringify(documents));
+  Room.update({
+    '_id' : topic
+  }, {
+    '$pull' : {
+      'clientIDs' : client.id
+    }
+  }, {
+    'upsert' : true
+  }).then(function(document) {
+    Room.findOne({
+      '_id' : topic
+    }, '_id clientIDs private').then(function(document) {
+      if (document.clientIDS.length > 0)
+      {
+        notifyAllRooms();
+        notifyAllUsers(topic);
+      }
+      else
+      {
+        Room.remove({
+          '_id' : topic
+        }, function(error) {
+          if (!error) getClient().publish('removeroom', JSON.stringify({ 'room' : topic }));
+        });
+      }
+    });
   });
 }
 
-function broadcastAllClients()
+function notifyAllRooms()
 {
-  Channel.find({}, '_id clientIds private').then(function(document) {
-    getClient().publish('totalclients', JSON.stringify(document));
+  Room.find({}, '_id clientIDs private').then(function(documents) {
+    getClient().publish('totalrooms', JSON.stringify(documents));
+  });
+}
+
+function notifyAllUsers(topic)
+{
+  Room.findOne({
+    '_id' : topic
+  }, '_id clientIDs private').then(function(document) {
+    getClient().publish('totalusers', JSON.stringify(document));
   });
 }
 

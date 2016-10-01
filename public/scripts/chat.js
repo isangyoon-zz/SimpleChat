@@ -1,6 +1,8 @@
 (function($){
   const NICKNAME_MAX_LENGTH = 15,
-        CHANNEL_MAX_LENGTH  = 20;
+        ROOMNAME_MAX_LENGTH  = 20;
+
+  const ReservedTopics = ['createroom', 'removeroom', 'totalrooms', 'totlausers', 'online', 'offline'];
 
   var enableEffect = false;
 
@@ -10,13 +12,13 @@
       isPrivate = false;
 
   var template = {
-    'channel': [
-      '<li data-channelId="${channel}">',
-      '<span class="icon"></span> ${channel} <div style="${style}"><img src="images/private.png"/></div>',
+    'room': [
+      '<li data-roomID="${room}">',
+      '<span class="icon"></span> ${room} <div style="${style}"><img src="./images/private.png"></div>',
       '</li>'
     ].join(""),
     'user': [
-      '<li data-userId="${userId}" class="cf">',
+      '<li data-userID="${user}" class="cf">',
       '<div class="fl userName"><span class="icon"></span> ${nickname}</div>',
       '<div class="fr composing"></div>',
       '</li>'
@@ -26,14 +28,119 @@
       '<div class="fl sender">${sender}: </div><div class="fl text">${text}</div><div class="fr time">${time}</div>',
       '</li>'
     ].join(""),
+    'notice': [
+      '<li class="cf">',
+      '<div class="fl text"><img src="./images/notice.gif"> ${text}</div>',
+      '</li>'
+    ].join(""),
     'image': [
       '<li class="cf">',
-      '<div class="fl sender">${sender}: </div><div class="fl image"><canvas style="margin-left: 20px" class="img_uploaded"></canvas></div><div class="fr time">${time}</div>',
+      '<div class="fl sender">${sender}: </div><div class="fl image"><canvas class="img_uploaded"></canvas></div><div class="fr time">${time}</div>',
       '</li>'
     ].join("")
   };
 
-  // Handle the client nickname
+  function addRoom(name, notify, protect)
+  {
+    let style = 'display: ' + (protect ? 'inline' : 'none');
+
+    if ($('.chat-rooms ul li[data-roomID="' + name + '"]').length === 0)
+    {
+      $.tmpl(template.room, {
+        'room' :  name,
+        'style' : style
+      }).appendTo('.chat-rooms ul');
+
+      if (notify) insertServerMeesage(name + ' 채팅방이 생성되었습니다.');
+    }
+  }
+
+  function removeRoom(name, notify)
+  {
+    $('.chat-rooms ul li[data-roomID="' + name + '"]').remove();
+
+    if (notify) insertServerMeesage(name + ' 채팅방이 삭제되었습니다.');
+  }
+
+  function addUser(user, notify, myself)
+  {
+    let html = $.tmpl(template.user, {
+      'user' : user.clientID,
+      'nickname' : user.nickname
+    });
+
+    if (myself) html.addClass('myself');
+    if ($('.chat-users ul li[data-userID="' + user.clientID + '"]').length === 0) html.appendTo('.chat-users ul');
+  }
+
+  function removeUser(user)
+  {
+    $('.chat-users ul li[data-userID="' + user + '"]').remove();
+  }
+
+  function createRoom()
+  {
+    let room = $('#room-popup .input input').val().trim();
+    let protect = $('#private').prop('checked');
+
+    if (protect && !$('#password').val()) effect('#room-popup', '#room-popup .input input', 'tada', 'dangerous');
+    else if (room &&  room.length <= ROOMNAME_MAX_LENGTH && room != belong && ReservedTopics.indexOf(room) === -1)
+    {
+      if (protect)
+      {
+        let password = (protect) ? $('#password').val() : undefined;
+
+        $.post('./create', {
+          'room' : room,
+          'password' : password
+        }).done(function(data) {
+          onSuccessRoomCreation(room, protect);
+        });
+      }
+      else  onSuccessRoomCreation(room, protect);
+    }
+    else
+    {
+      effect('#room-popup', '#room-popup .input input', 'tata', 'dangerous');
+
+      $('#room-popup .input input').val('');
+    }
+  }
+
+  function onSuccessRoomCreation(room, protect)
+  {
+    $('.chat-shadow').show().find('.content').html(room + ' 채팅방을 생성하고 있습니다.');
+    $('.chat-shadow').animate({
+      'opacity' : 1
+    }, 200);
+
+    client.unsubscribe(belong);
+    client.subscribe(room);
+
+    Avgrund.hide();
+
+    let json = JSON.stringify({
+      'room' : room,
+      'nickname' : nickname,
+      'private' : protect
+    });
+    let messageObject = new Messaging.Message(json);
+    messageObject.destinationName = 'createroom';
+
+    client.send(messageObject);
+
+    initializeRoom(room, protect);
+  }
+
+  function setRoom(room, protect)
+  {
+    belong = room;
+    isPrivate = protect;
+
+    $('.chat-rooms ul li.selected').removeClass('selected');
+    $('.chat-rooms ul li[data-roomID="' + room + '"]').addClass('selected');
+  }
+
   function nicknameHandler()
   {
     let name = $('#nickname-popup .input input').val().trim();
@@ -43,40 +150,73 @@
       nickname = name;
 
       Avgrund.hide();
+
       connect();
     }
     else
     {
+      effect('#nickname-popup', '#nickname-popup .input input', 'tada', 'dangerous');
+
       $('#nickname-popup .input input').val('');
     }
   }
 
-  // Handle the client messages
+  function passwordHander()
+  {
+    let room = $('#password-popup .room-name').val();
+    let password = $('password-popup .input input').val();
+
+    if (password)
+    {
+      $.post('./check', {
+        'room' : room,
+        'password' : password
+      }).done(function(data) {
+        Avgrund.hide();
+
+        client.unsubscribe(belong);
+        client.subscribe(room);
+
+        switchRoom(room);
+      }).fail(function(error) {
+        effect('#password-popup', '#password-popup .input input', 'tada', 'dangerous');
+
+        $('#password-popup .input input').val('');
+      });
+    }
+    else
+    {
+      effect('#password-popup', '#password-popup .input input', 'tada', 'dangerous');
+
+      $('#password-popup .input input').val('');
+    }
+  }
+
   function messageHandler()
   {
-    let message = $('.chat-input input').val().trim();
+    let content = $('.chat-input input').val().trim();
 
-    if (message)
+    if (content)
     {
       let json = JSON.stringify({
         'nickname' : nickname,
-        'message' : message
+        'message' : content
       });
-
       let messageObject = new Messaging.Message(json);
       messageObject.destinationName = belong;
+
       client.send(messageObject);
 
       $('.chat-input input').val('');
     }
+    else effect('.chat', '.chat input', 'wobble', 'dangerous');
   }
 
-  // Handler the client attachment (image)
-  function attachHandler(files, callback)
+  function attachmentHandler(files, callback)
   {
     for (let i = 0; i < files.length; ++i)
     {
-      let reader =  new FileReader();
+      let reader = new FileReader();
       reader.onloadend = function(event) {
         let json = JSON.stringify({
           'nickname' : nickname,
@@ -85,6 +225,7 @@
         });
         let messageObject = new Messaging.Message(json);
         messageObject.destinationName = belong;
+
         client.send(messageObject);
       };
 
@@ -94,21 +235,15 @@
     callback();
   }
 
-  function insertMessage(sender, message, showTime, is_me, is_server)
+  function insertMessage(from, message, showTime, myself)
   {
-    let $html = $.tmpl(template.message, {
-      'sender' : sender,
+    let html = $.tmpl(template.message, {
+      'sender' : from,
       'text' : message,
       'time' : (showTime) ? getTime() : ''
     });
 
-    setMessage($html, is_me, is_server);
-  }
-
-  function setMessage(html, is_me, is_server)
-  {
-    if (is_me) html.addClass('marker');
-    if (is_server) html.find('.sender').css('color', '#1c5380');
+    if (myself) html.addClass('marker');
 
     html.appendTo('.chat-messages ul');
     $('.chat-messages').animate({
@@ -116,166 +251,92 @@
     }, 100);
   }
 
-  function insertImage(sender, message, showTime, is_me, is_server)
+  function insertServerMeesage(message)
   {
-    let $html = $.tmpl(template.image, {
-      'sender' : sender,
+    let html = $.tmpl(template.notice, {
+      'text' : message
+    });
+
+    html.addClass('system');
+
+    html.appendTo('.chat-messages ul');
+    $('.chat-messages').animate({
+      'scrollTop' : $('.chat-messages ul').height()
+    }, 100);
+  }
+
+  function insertImage(from, source, showTime, myself)
+  {
+    let html = $.tmpl(template.image, {
+      'sender' : from,
       'time' : (showTime) ? getTime() : ''
     });
 
-    let canvas = $html.find('.img_uploaded')[0];
-    let context = canvas.getContext('2d');
+    let canvas = html.find('.img_uploaded')[0],
+        context = canvas.getContext('2d');
 
     let image = new Image();
-    image.src = message;
-    image.onload = function() { context.drawImage(image, 0, 0, 200, 200); };
+    image.src = source;
+    image.onload = function() {
+      context.drawImage(image, 0, 0, 200, 200);
+    };
 
-    setMessage($html, is_me, is_server);
-  }
+    if (myself) html.addClass('marker');
 
-  function padding(value)
-  {
-    return (value < 10) ? '0' + value : value;
+    html.appendTo('.chat-messages ul');
+    $('.chat-messages').animate({
+      'scrollTop' : $('.chat-messages ul').height()
+    }, 100);
   }
 
   function getTime()
   {
     let date = new Date();
 
-    let hour = padding(date.getHours());
-    let min = padding(date.getMinutes());
-    let sec = padding(date.getSeconds());
+    let hour = (date.getHours() < 10) ? '0' + date.getHours() : date.getHours(),
+        min = (date.getMinutes() < 10) ? '0' + date.getMinutes() : date.getMinutes(),
+        sec = (date.getSeconds() < 10) ? '0' + date.getSeconds() : date.getSeconds();
 
     return hour + ':' + min + ':' + sec;
   }
 
-  // for shake effect
-  function shake_effect(container, input, effect, bgColor)
+  function effect(container, input, effect, style)
   {
     if (!enableEffect)
     {
       enableEffect = true;
 
       $(container).addClass(effect);
-      $(input).addClass(bgColor);
+      $(input).addClass(style);
 
       window.setTimeout(function() {
         $(container).removeClass(effect);
-        $(input).removeClass(bgColor);
+        $(input).removeClass(style);
+
         $(input).focus();
 
         enableEffect = false;
-      }, 1000);
+      }, 2000);
     }
   }
 
-  // Channel
-  function createChannel()
-  {
-    let channel = $('#addchannel-popup .input input').val().trim();
-    let protect = $('#passwordProtected').prop('checked');
-
-    if (protect && !$('#password').val()) {}
-    else if  (channel && channel.length <= CHANNEL_MAX_LENGTH && channel != belong)
-    {
-      if (protect)
-      {
-        let password = protect ? $('#password').val() : undefined;
-
-        $.post('/private', {
-          'channel' : channel,
-          'password' : password
-        }).done(function(data) {
-          onChannelCreated(channel, protect);
-        });
-      }
-      else onChannelCreated(channel, protect);
-    }
-    else $('#addchannel-popup .input input').val('');
-  }
-
-  function onChannelCreated(channel, protect)
-  {
-    $('.chat-shadow').show().find('.content').html('채널 생성중..');
-    $('.chat-shadow').animate({ 'opacity' : 1 }, 200);
-
-    client.unsubscribe(belong);
-    client.subscribe(channel);
-
-    Avgrund.hide();
-    let json = JSON.stringify({
-      'channel' : channel,
-      'nickname' : nickname,
-      'private' : protect
-    });
-    let messageObject = new Messaging.Message(json);
-    messageObject.destinationName = 'createchannel';
-    client.send(messageObject);
-
-    initialize(channel, protect);
-  }
-
-  function addChannel(name, announce, is_private)
-  {
-    let style = 'display: ' + (is_private ? 'inline' : 'none');
-
-    if ($('.chat-channels ul li[data-channelId="' + name + '"]').length === 0)
-    {
-      $.tmpl(template.channel, {
-        'channel' : name,
-        'style' : style
-      }).appendTo('.chat-channels ul');
-
-      if (announce) insertMessage('서버', name + '채널이 생성되었습니다.', true, false, true);
-    }
-  }
-
-  function removeChannel(name, announce)
-  {
-    $('.chat-channels ul li[data-channelId="' + name + '"]').remove();
-
-    if (announce) insertMessage('서버', name + '채널이 제거되었습니다.', true, false, true);
-  }
-
-  function setCurrentChannel(channel, is_private)
-  {
-    belong = channel;
-    isPrivate = is_private;
-
-    $('.chat-channels ul li.selected').removeClass('selected');
-    $('.chat-channels ul li[data-channelId="' + channel + '"]').addClass('selected');
-  }
-
-  // Client (User)
-  function addClient(client, announce, myself)
-  {
-    let $html = $.tmpl(template.user, client);
-
-    if (myself) $html.addClass('myself');
-    if ($('.chat_users ul l i[data-userId="' + client.clientId + '"]').length === 0) $html.appendTo('.chat-users ul');
-  }
-
-  function removeClient(client)
-  {
-    $('.chat_users ul l i[data-userId="' + client.clientId + '"]').remove();
-  }
-
-  // connect
   function connect()
   {
-    $('.chat-shadow .content').html('연결중...');
+    $('.chat-shadow .content').html('채팅에 참가하고 있습니다.');
 
     client = new Messaging.Client('localhost', 1884, nickname);
     client.connect({
-      'onSuccess': onConnect,
-      'keepAliveInterval': 0
+      'onSuccess' : onSuccessConnection,
+      'keepAliveInterval' : 0
     });
     client.onMessageArrived = onMessageArrived;
   }
 
-  function onConnect()
+  function onSuccessConnection()
   {
-    $('.chat-shadow').animate({'opacity': 0}, 200, function() {
+    $('.chat-shadow').animate({
+      'opacity' : 0
+    }, 200, function() {
       $(this).hide();
 
       $('.chat input').focus();
@@ -285,14 +346,14 @@
     isPrivate = false;
 
     client.subscribe(belong);
-    client.subscribe('createchannel');
-    client.subscribe('removechannel');
-    client.subscribe('totalchannels');
-    client.subscribe('totalclients');
+    client.subscribe('createroom');
+    client.subscribe('removeroom');
+    client.subscribe('totalrooms');
+    client.subscribe('totalusers');
     client.subscribe('online');
     client.subscribe('offline');
 
-    initialize(belong);
+    initializeRoom(belong);
   }
 
   function onMessageArrived(message)
@@ -300,107 +361,107 @@
     let json = JSON.parse(message.payloadString);
     let topic = message.destinationName;
 
-    console.log(json);
-
-    if (topic == 'createchannel')
+    if (topic === 'createroom')
     {
-      if (json.nickname != nickname) insertMessage('서버', '채널' + json.channel + '이 생성되었습니다.', true, false, true);
+      if (json.nickname != nickname) insertServerMeesage('"' + json.room + '" 채팅방이 생성되었습니다.');
     }
-    else if (topic == 'removechannel')
+    else if (topic === 'removeroom')
     {
-      removeChannel(json.channel, false);
+      removeRoom(json.room, false);
     }
-    else if (topic == 'online')
+    else if (topic === 'online')
     {
-      if (json.nickname != nickname && json.channel == belong) insertMessage('서버', json.nickname + '님이 접속하였습니다.', true, false, true);
+      if (json.nickname !== nickname && json.room === belong) insertServerMeesage(json.nickname + '님이 채팅에 참여했습니다.');
     }
-    else if (topic == 'offline')
+    else if (topic === 'offline')
     {
-      if (json.nickname != nickname && json.channel == belong)
+      if (json.nickname !== nickname && json.room === belong)
       {
-        insertMessage('서버', json.nickname + '님이 나갔습니다.', true, false, true);
-        removeClient(json.nickname);
+        insertServerMeesage(json.nickname + '님이 채팅방을 나갔습니다.');
+
+        removeUser(json.nickname);
       }
     }
-    else if (topic == 'totalchannels')
+    else if (topic === 'totalrooms')
     {
       for (let i = 0, length = json.length; i < length; ++i)
       {
         if (json[i]._id && json[i]._id !== '')
         {
-          let protect = json[i].private === undefined ? false : json[i].private;
+          let protect = (json[i].private === undefined) ? false : json[i].private;
 
-          addChannel(json[i]._id, false, protect);
+          addRoom(json[i]._id, false, protect);
         }
       }
     }
-    else if (topic == 'totalclients')
+    else if (topic == 'totalusers')
     {
-      for (let i = 0, length = json.length; i < length; i++)
+      if (json._id === belong)
       {
-        if (json[i]._id && json[i]._id == belong)
+        for (let i = 0, length = json.clientIDs.length; i < length; ++i)
         {
-          for (let j = 0, length2 = json[i].clientIds.length; j < length2; ++j)
+          if (json.clientIDs[i] && json.clientIDs[i] !== nickname)
           {
-            if (json[i].clientIds[j] && json[i].clientIds[j] != nickname)
-            {
-              addClient({
-                'nickname' : json[i].clientIds[j],
-                'clientId' : json[i].clientIds[j]
-              }, false);
-            }
+            addUser({
+              'nickname' : json.clientIDs[i],
+              'clientID' : json.clientIDs[i]
+            }, false);
           }
-
-          break;
         }
       }
     }
     else
     {
-      if (json.type === 'image') insertImage(json.nickname, json.message, true, json.nickname == nickname, false);
-      else insertMessage(json.nickname, json.message, true, json.nickname == nickname, false);
+      if (json.type === 'image') insertImage(json.nickname, json.message, true, (json.nickname === nickname));
+      else insertMessage(json.nickname, json.message, true, (json.nickname === nickname));
     }
   }
 
-  function initialize(channel, is_private)
+  function initializeRoom(room, protect)
   {
-    addChannel(channel, false, is_private);
-    setCurrentChannel(channel, is_private);
+    addRoom(room, false, protect);
+    setRoom(room, protect);
 
-    insertMessage('서버', '안녕하세요! 매너있는 채팅 부탁드립니다!', true, false, true);
+    if (room === 'Lobby') insertServerMeesage('즐거운 채팅 되세요!');
+    else insertServerMeesage('"' + room + '" 채팅방에서 즐거운 시간 보내세요!');
 
     $('.chat-users ul').empty();
-    addClient({
-      'nickname': nickname,
-      'clientId': nickname
+    addUser({
+      'nickname' : nickname,
+      'clientID' : nickname
     }, false, true);
 
-    $('.chat-shadow').animate({ 'opacity': 0 }, 200, function()  {
+    $('.chat-shadow').animate({
+      'opacity' : 0
+    }, 200, function() {
       $(this).hide();
 
       $('.chat input').focus();
     });
   }
 
-  function switching(channel)
+  function switchRoom(room)
   {
-    setCurrentChannel(channel);
-    insertMessage('서버', channel + ' 채널에 오신 것을 환영합니다!', true, false, true);
+    setRoom(room);
+
+    if (room === 'Lobby') insertServerMeesage('로비로 돌아왔습니다. 채팅방에 참여해 즐거운 채팅을 해보세요!');
+    else insertServerMeesage('"' + room + '" 채팅방에서 즐거운 시간 보내세요!');
 
     $('.chat-users ul').empty();
-    addClient({
-      'nickname': nickname,
-      'clientId': nickname
+    addUser({
+      'nickname' : nickname,
+      'clientID' : nickname
     }, false, true);
 
-    $('.chat-shadow').animate({ 'opacity': 0 }, 200, function()  {
+    $('.chat-shadow').animate({
+      'opacity' : 0
+    }, 200, function() {
       $(this).hide();
 
       $('.chat input').focus();
     });
   }
 
-  // attach dom events
   $(function() {
     $('.chat-input input').on('keydown', function(event) {
       let keycode = event.which || event.keyCode;
@@ -413,17 +474,10 @@
     });
 
     $('.chat-attach input').on('change', function() {
-      let uploadedFiles = this.files;
-
-      attachHandler(uploadedFiles, function() { this.files = undefined; });
-    });
-
-    // start chat
-    $('.button.start').on('click', function() {
-      $('nickname-popup .input input').val('');
-
-      Avgrund.show('#nickname-popup');
-      window.setTimeout(function() { $('nickname-popup .input input').focus(); }, 100);
+      let files = this.files;
+      attachmentHandler(files, function() {
+        this.files = undefined;
+      });
     });
 
     $('#nickname-popup .input input').on('keydown', function(event) {
@@ -432,62 +486,88 @@
       if (keycode === 13) nicknameHandler();
     });
 
-    $('#nickname-popup .join').on('click', function() {
+    $('#nickname-popup .start').on('click', function() {
       nicknameHandler();
     });
 
-    $('#addchannel-popup .input input').on('keydown', function(event) {
+    $('#password-popup .input input').on('keydown', function(event) {
       let keycode = event.which || event.keyCode;
-      if (keycode === 13) createChannel();
+
+      if (keycode === 13) passwordHander();
     });
 
-    $('#addchannel-popup .create').on('click', function() {
-      createChannel();
+    $('#password-popup .start').on('click', function() {
+      passwordHander();
     });
 
-    $('.chat-channels .title-button').on('click', function() {
-      $('#addchannel-popup .input input').val('');
+    $('#room-pop .input input').on('keydown', function(event) {
+      let keycode = event.which || event.keyCode;
 
-      Avgrund.show('#addchannel-popup');
-      window.setTimeout(function() { $('#addchannel-popup .input input').focus(); }, 100);
+      if (keycode === 13) createRoom();
     });
 
-    $('.chat-channels ul').on('scroll', function() {
-      $('.chat-channels ul li.selected').css('top', $(this).scrollTop());
+    $('.button.create').on('click', function() {
+      createRoom();
     });
 
-    $('.chat-channels ul li').live('click', function(){
-        var channel = $(this).attr('data-channelId');
-        var isPrivate = $($(this).children('div')[0]).css('display') === 'inline';
+    $('.button.join').on('click', function() {
+      $('#nickname-popup .input input').val('');
 
-        if (channel != belong)
-        {
-          if (isPrivate)
-          {
-            $('#password-popup .input input').val('');
-            $('#password-popup .channel-name').val(channel);
-            $('#password-popup .popup-title').text('비밀번호를 입력하세요.');
+      Avgrund.show('#nickname-popup');
+      window.setTimeout(function() {
+        $('#nickname-popup .input input').focus();
+      }, 100);
+    });
 
-            Avgrund.show('#password-popup');
-            window.setTimeout(function() { $('#password-popup .input input').focus(); }, 100);
-          }
-          else
-          {
-            client.unsubscribe(belong);
-            client.subscribe(belong);
+    $('.chat-rooms .title-button').on('click', function() {
+      $('#room-popup .input input').val('');
 
-            switching(channel);
-          }
-        }
+      Avgrund.show('#room-popup');
+      window.setTimeout(function() {
+        $('#room-popup .input input').focus();
+      }, 100);
+    });
+
+    $('.chat-rooms ul').on('scroll', function() {
+      $('.chat-rooms ul li.selected').css({
+        'top' : $(this).scrollTop()
+      });
     });
 
     $('.chat-messages').on('scroll', function() {
-      var self = this;
+      let self = this;
 
       window.setTimeout(function() {
-        if($(self).find('ul').height() > $(self).scrollTop() + $(self).height()) $(self).addClass('scroll');
+        if ($(self).find('ul').height() > $(self).scrollTop() + $(self).height()) $(self).addClass('scroll');
         else $(self).removeClass('scroll');
       }, 50);
+    });
+
+    $('.chat-rooms ul li').live('click', function(){
+      let room = $(this).attr('data-roomID');
+      let protect = $($(this).children('div')[0]).css('display') === 'inline';
+
+      if (room !== belong)
+      {
+        if (protect)
+        {
+          $('#password-popup .input input').val('');
+          $('#password-popup .room-name').val(room);
+          $('#password-popup .popup-title').text('비밀번호를 입력하세요.');
+
+          Avgrund.show('#password-popup');
+          window.setTimeout(function() {
+            $('#password-popup .input input').focus();
+          }, 100);
+        }
+        else
+        {
+          client.unsubscribe(belong);
+          client.subscribe(room);
+
+          switchRoom(room);
+        }
+      }
     });
   });
 

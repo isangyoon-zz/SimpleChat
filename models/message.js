@@ -1,11 +1,13 @@
 const mongoose = require('mongoose');
 
-let schema = new mongoose.Schema({
+var schema = new mongoose.Schema({
   'from' : String,
+  'to' : String,
   'content' : String,
-  'channel' : String,
+  'room' : String,
   'date' : Date
 });
-let Message = mongoose.model('Message', schema);
+
+var Message = mongoose.model('Message', schema);
 
 module.exports = Message;

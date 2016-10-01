@@ -8,9 +8,9 @@
   <link rel="stylesheet" href="http://fonts.googleapis.com/earlyaccess/jejugothic.css" type="text/css">
 
   <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.0/themes/smoothness/jquery-ui.css">
-  <link href="/styles/animate.css" rel="stylesheet" type="text/css" />
-  <link href="/styles/avgrund.css" rel="stylesheet" type="text/css" />
-  <link href="/styles/global.css" rel="stylesheet" type="text/css" />
+  <link href="./styles/animate.css" rel="stylesheet" type="text/css" />
+  <link href="./styles/avgrund.css" rel="stylesheet" type="text/css" />
+  <link href="./styles/global.css" rel="stylesheet" type="text/css" />
 
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
 </head>
@@ -20,7 +20,7 @@
       <div class="cf pr chat animate">
         <div class="pa chat-shadow">
           <div class="content animate bounceInDown">
-            <div class="button start">채팅 시작</div>
+            <div class="button join">채팅 시작</div>
           </div>
         </div> <!-- chat-shadow -->
 
@@ -39,14 +39,13 @@
               <ul></ul>
             </div> <!-- chat-users -->
 
-            <!--
-            <div class="chat-channels">
+            <div class="chat-rooms">
               <div class="cf title">
-                <div class="fl">채널</div>
+                <div class="fl">채팅방</div>
+                <div class="fr title-button">+</div>
               </div>
               <ul class="pr"></ul>
             </div>
-            -->
           </div> <!-- rightside -->
         </div> <!-- header -->
 
@@ -76,22 +75,25 @@
     <div class="content">닉네임은 15자 이하로 입력할 수 있습니다.</div>
 
     <div class="input"><input type="text" maxlength="15" placeholder="닉네임"></div>
-    <div class="button join">입장</div>
+    <div class="button small start">입장</div>
 	</aside>
 
-  <aside id="addchannel-popup" class="popup animate avgrund-popup avgrund-popup-room">
-    <div class="title">채널명</div>
-    <div class="content">채널명은 20자 이하로 입력할 수 있습니다.</div>
+  <aside id="room-popup" class="popup animate avgrund-popup avgrund-popup-room">
+    <div class="title">채팅방 이름</div>
+    <div class="content">채널 이름은 10자 이하로 입력할 수 있습니다.</div>
 
-    <div class="input"><input type="text" maxlength="10" placeholder="채널명" /></div>
-		<div class="button create">만들기</div>
+    <div class="input"><input type="text" maxlength="10" placeholder="채팅방 이름"></div>
+    <div class="input"><input type="checkbox" id="private" onclick="togglePassword(this)"> 비공개</div>
+		<div class="input"><input id="password" type="password" maxlength="20" placeholder="비밀번호" style="display: none;"/></div>
+
+		<div class="button small create">만들기</div>
 	</aside>
 
   <aside id="password-popup" class="popup animate avgrund-popup">
     <div style="display: none;" class="room-name"></div>
     <div class="popup-title"></div>
-    <div class="input"><input type="password" maxlength="20" placeholder="password" /></div>
-    <div class="button join2">입장</div>
+    <div class="input"><input type="password" maxlength="20" placeholder="password"></div>
+    <div class="button small start">입장</div>
 	</aside>
 
   <div class="avgrund-cover"></div>
@@ -103,5 +105,23 @@
   <script type="text/javascript" src="./scripts/avgrund.js"></script>
 
   <script type="text/javascript" src="./scripts/chat.js"></script>
+
+  <script type="text/javascript">
+    function togglePassword(element)
+    {
+      let input = $(element);
+
+      if (input.prop('checked'))
+      {
+        $('.avgrund-popup-room').height(300);
+        $('#password').show();
+      }
+      else
+      {
+        $('#password').hide();
+        $('.avgrund-popup-room').height(200);
+      }
+    }
+  </script>
 </body>
 </html>

@@ -32,9 +32,9 @@
 
 .avgrund-contents {
 	position: relative;
-	padding-top: 100px;
-	max-width: 960px;
-	height: 503px;
+	padding: 20px;
+	max-width: 400px;
+	height: 100%;
 	margin: auto;
 }
 	.avgrund-active .avgrund-contents {
@@ -123,3 +123,4 @@
 	     -o-transition: none;
 	        transition: none;
 }
+
