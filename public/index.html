@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <title>Simple Chat Application</title>
+
+  <!-- Web fonts -->
+  <link rel="stylesheet" href="http://fonts.googleapis.com/css?family=Roboto:100,300,400,700,900,100italic,300italic,400italic,700italic,900italic" type="text/css">
+  <link rel="stylesheet" href="http://fonts.googleapis.com/earlyaccess/jejugothic.css" type="text/css">
+
+  <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.0/themes/smoothness/jquery-ui.css">
+  <link href="/styles/animate.css" rel="stylesheet" type="text/css" />
+  <link href="/styles/avgrund.css" rel="stylesheet" type="text/css" />
+  <link href="/styles/global.css" rel="stylesheet" type="text/css" />
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
+</head>
+<body>
+  <div class="avgrund-contents">
+    <div class="pr center wrapper">
+      <div class="cf pr chat animate">
+        <div class="pa chat-shadow">
+          <div class="content animate bounceInDown">
+            <div class="button start">채팅 시작</div>
+          </div>
+        </div> <!-- chat-shadow -->
+
+        <div class="cf header">
+          <div class="fl leftside">
+            <div class="chat-messages">
+              <ul></ul>
+            </div> <!-- chat-message -->
+          </div> <!-- leftside -->
+
+          <div class="fl rightside">
+            <div class="chat-users">
+              <div class="cf title">
+                <div class="fl">접속자</div>
+              </div> <!-- title -->
+              <ul></ul>
+            </div> <!-- chat-users -->
+
+            <!--
+            <div class="chat-channels">
+              <div class="cf title">
+                <div class="fl">채널</div>
+              </div>
+              <ul class="pr"></ul>
+            </div>
+            -->
+          </div> <!-- rightside -->
+        </div> <!-- header -->
+
+        <div class="cf footer">
+          <div class="fl chat-input">
+            <input type="text" placeholder="">
+          </div> <!-- chat-input -->
+
+          <div class="fl chat-attach">
+            <label for="chat-file" style="display: block; margin-top: 15px;">
+              <img src="./images/picture.png" style="cursor: pointer; display: block; margin: auto;">
+            </label>
+            <input id="chat-file" type="file" name="attachment[]" multiple="1" accept="image/*" style="display: none;">
+          </div> <!-- chat-attach -->
+
+          <div class="fl chat-submit">
+            <button>전송</button>
+          </div> <!-- chat-submit -->
+        </div> <!-- footer -->
+      </div> <!-- chat -->
+    </div> <!-- wrapper -->
+  </div> <!-- avgrund-contents -->
+
+  <!-- Popup -->
+  <aside id="nickname-popup" class="popup animate avgrund-popup">
+    <div class="title">닉네임</div>
+    <div class="content">닉네임은 15자 이하로 입력할 수 있습니다.</div>
+
+    <div class="input"><input type="text" maxlength="15" placeholder="닉네임"></div>
+    <div class="button join">입장</div>
+	</aside>
+
+  <aside id="addchannel-popup" class="popup animate avgrund-popup avgrund-popup-room">
+    <div class="title">채널명</div>
+    <div class="content">채널명은 20자 이하로 입력할 수 있습니다.</div>
+
+    <div class="input"><input type="text" maxlength="10" placeholder="채널명" /></div>
+		<div class="button create">만들기</div>
+	</aside>
+
+  <aside id="password-popup" class="popup animate avgrund-popup">
+    <div style="display: none;" class="room-name"></div>
+    <div class="popup-title"></div>
+    <div class="input"><input type="password" maxlength="20" placeholder="password" /></div>
+    <div class="button join2">입장</div>
+	</aside>
+
+  <div class="avgrund-cover"></div>
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.0/jquery-ui.min.js"></script>
+  <script type="text/javascript" src="./scripts/jquery.tmpl.min.js"></script>
+  <script type="text/javascript" src="./scripts/mqttws31.js"></script>
+  <script type="text/javascript" src="./scripts/encoder.js"></script>
+  <script type="text/javascript" src="./scripts/avgrund.js"></script>
+
+  <script type="text/javascript" src="./scripts/chat.js"></script>
+</body>
+</html>
